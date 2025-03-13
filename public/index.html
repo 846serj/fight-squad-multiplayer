@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>My Multiplayer Game</title>
+    <style>
+        body { margin: 0; overflow: hidden; }
+        canvas { width: 100%; height: 100%; }
+        #joystick, #shoot, #up, #down { position: absolute; background: gray; border-radius: 50%; }
+        #joystick { width: 100px; height: 100px; bottom: 20px; left: 20px; }
+        #knob { width: 40px; height: 40px; background: white; border-radius: 50%; position: absolute; top: 30px; left: 30px; }
+        #shoot { width: 60px; height: 60px; bottom: 20px; right: 20px; }
+        #up { width: 60px; height: 60px; top: 20px; right: 20px; }
+        #down { width: 60px; height: 60px; top: 100px; right: 20px; }
+    </style>
+</head>
+<body>
+    <div id="joystick"><div id="knob"></div></div>
+    <button id="shoot">Shoot</button>
+    <button id="up">Up</button>
+    <button id="down">Down</button>
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="module" src="game.js"></script>
+</body>
+</html>
