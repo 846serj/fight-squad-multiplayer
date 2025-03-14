@@ -448,33 +448,23 @@ function triggerShoot(e) {
 shootBtn.addEventListener('click', triggerShoot);
 shootBtn.addEventListener('touchstart', triggerShoot);
 
-// Up/Down buttons
-const upBtn = document.getElementById('up');
-const downBtn = document.getElementById('down');
+// Fly button
+const flyBtn = document.getElementById('flyBtn');
 
-function startUp(e) {
+function startFly(e) {
     e.preventDefault();
-    moveY = 1;
+    keys.e = true; // Match E key (fly up)
 }
 
-function startDown(e) {
+function stopFly(e) {
     e.preventDefault();
-    moveY = -1;
+    keys.e = false; // Drop with gravity
 }
 
-function stopMove(e) {
-    e.preventDefault();
-    moveY = 0;
-}
-
-upBtn.addEventListener('mousedown', startUp);
-upBtn.addEventListener('touchstart', startUp);
-upBtn.addEventListener('mouseup', stopMove);
-upBtn.addEventListener('touchend', stopMove);
-downBtn.addEventListener('mousedown', startDown);
-downBtn.addEventListener('touchstart', startDown);
-downBtn.addEventListener('mouseup', stopMove);
-downBtn.addEventListener('touchend', stopMove);
+flyBtn.addEventListener('mousedown', startFly);
+flyBtn.addEventListener('touchstart', startFly);
+flyBtn.addEventListener('mouseup', stopFly);
+flyBtn.addEventListener('touchend', stopFly);
 
 // Shoot function
 function shoot() {
