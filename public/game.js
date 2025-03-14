@@ -1,27 +1,27 @@
-import * as THREE from 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.module.js';
+import * as THREE from '/three/three.module.js';
 
 // Scene setup
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x5484b2);
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+scene.background = new THREE.Color(0x8B4513); // Earthy Mars sky (saddle brown)
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
 const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 document.body.appendChild(renderer.domElement);
 
-// Directional light for shadows
-const light = new THREE.DirectionalLight(0xffffff, 0.8);
+// Directional light for Mars shadows (reddish tint, softer)
+const light = new THREE.DirectionalLight(0xff9999, 0.6);
 light.position.set(50, 100, 50);
 light.castShadow = true;
-light.shadow.mapSize.width = 1024;
-light.shadow.mapSize.height = 1024;
-light.shadow.camera.left = -100;
-light.shadow.camera.right = 100;
-light.shadow.camera.top = 100;
-light.shadow.camera.bottom = -100;
+light.shadow.mapSize.width = 2048;
+light.shadow.mapSize.height = 2048;
+light.shadow.camera.left = -500;
+light.shadow.camera.right = 500;
+light.shadow.camera.top = 500;
+light.shadow.camera.bottom = -500;
 light.shadow.camera.near = 0.1;
-light.shadow.camera.far = 300;
+light.shadow.camera.far = 200;
 scene.add(light);
 
 // Handle resize and orientation change
@@ -36,120 +36,103 @@ window.addEventListener('resize', resizeRenderer);
 window.addEventListener('orientationchange', resizeRenderer);
 resizeRenderer();
 
-// Socket.IO (global io from socket.io.js)
+// Socket.IO
 const socket = io();
 const otherPlayers = {};
+let localUsername = null;
+let hasJoined = false;
 
-// City
-function createCity() {
-    const city = new THREE.Group();
+// Name labels container
+const nameLabels = document.getElementById('nameLabels');
+const playerNames = {};
+
+// Mars colony landscape
+function createMarsColony() {
+    const mars = new THREE.Group();
     const buildingSegments = [];
-    
-    const groundGeo = new THREE.PlaneGeometry(200, 200);
-    const groundMat = new THREE.MeshBasicMaterial({ color: 0x2b5424 });
+
+    // Mars ground (earthy brown-red)
+    const groundGeo = new THREE.PlaneGeometry(1000, 1000);
+    const groundMat = new THREE.MeshBasicMaterial({ color: 0x964B00 }); // Earthy Mars tone
     const ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
-    city.add(ground);
-    
+    mars.add(ground);
+
+    // White colony buildings (domes and pods)
     const buildingData = [
-        { width: 12, height: 120, segments: 4, x: 20, z: 10, color: 0x3478c0 },
-        { width: 14, height: 130, segments: 4, x: -15, z: -20, color: 0x144a80 },
-        { width: 18, height: 100, segments: 3, x: 40, z: -40, color: 0x1e61a7 },
-        { width: 16, height: 110, segments: 4, x: -30, z: 50, color: 0x3478c0 },
-        { width: 13, height: 140, segments: 5, x: 50, z: 30, color: 0x144a80 },
-        { width: 17, height: 90, segments: 3, x: -50, z: -30, color: 0x1e61a7 },
-        { width: 20, height: 80, segments: 3, x: 70, z: 70, color: 0x3478c0 },
-        { width: 15, height: 100, segments: 4, x: -70, z: 60, color: 0x144a80 },
-        { width: 19, height: 85, segments: 3, x: 80, z: -60, color: 0x1e61a7 },
-        { width: 14, height: 115, segments: 4, x: -80, z: -70, color: 0x3478c0 },
-        { width: 16, height: 125, segments: 5, x: 30, z: -80, color: 0x144a80 },
-        { width: 13, height: 95, segments: 3, x: -40, z: 80, color: 0x1e61a7 },
-        { width: 17, height: 105, segments: 4, x: 60, z: 0, color: 0x3478c0 },
-        { width: 15, height: 135, segments: 5, x: -60, z: 20, color: 0x144a80 }
+        { type: 'dome', radius: 10, height: 5, x: -400, z: -400 },
+        { type: 'pod', width: 8, height: 4, depth: 8, x: -350, z: 300 },
+        { type: 'dome', radius: 12, height: 6, x: 200, z: -300 },
+        { type: 'pod', width: 10, height: 5, depth: 10, x: 300, z: 400 },
+        { type: 'dome', radius: 15, height: 7, x: -200, z: 200 },
+        { type: 'pod', width: 6, height: 3, depth: 6, x: 400, z: -200 },
+        { type: 'dome', radius: 8, height: 4, x: -300, z: -100 },
+        { type: 'pod', width: 12, height: 6, depth: 12, x: 100, z: 350 },
     ];
-    
-    for (let i = 0; i < buildingData.length; i++) {
-        const data = buildingData[i];
-        const segmentHeight = data.height / data.segments;
-        const building = new THREE.Group();
-        
-        let currentY = segmentHeight / 2;
-        for (let j = 0; j < data.segments; j++) {
-            const width = data.width - j * 2;
-            const segmentGeo = new THREE.BoxGeometry(width, segmentHeight, width);
-            const windowSize = 0.5;
-            const spacing = 2;
-            const rows = Math.floor(segmentHeight / spacing) - 1;
-            const cols = Math.floor(width / spacing) - 1;
-            const vertices = segmentGeo.attributes.position.array;
-            const newVertices = [];
-            const newColors = [];
-            const baseColor = new THREE.Color(data.color);
-            const yellow = new THREE.Color(0xffff00);
-            
-            for (let v = 0; v < vertices.length; v += 3) {
-                newVertices.push(vertices[v], vertices[v + 1], vertices[v + 2]);
-                newColors.push(baseColor.r, baseColor.g, baseColor.b);
-            }
-            
-            for (let r = 0; r < rows; r++) {
-                for (let c = 0; c < cols; c++) {
-                    const y = -segmentHeight / 2 + (r + 1) * spacing;
-                    const xOffset = -width / 2 + (c + 1) * spacing;
-                    const zOffset = -width / 2 + (c + 1) * spacing;
-                    const front = [width / 2, y - windowSize / 2, zOffset - windowSize / 2, width / 2, y + windowSize / 2, zOffset - windowSize / 2, width / 2, y + windowSize / 2, zOffset + windowSize / 2, width / 2, y - windowSize / 2, zOffset + windowSize / 2];
-                    newVertices.push(...front);
-                    newColors.push(yellow.r, yellow.g, yellow.b, yellow.r, yellow.g, yellow.b, yellow.r, yellow.g, yellow.b, yellow.r, yellow.g, yellow.b);
-                    const back = [-width / 2, y - windowSize / 2, zOffset - windowSize / 2, -width / 2, y - windowSize / 2, zOffset + windowSize / 2, -width / 2, y + windowSize / 2, zOffset + windowSize / 2, -width / 2, y + windowSize / 2, zOffset - windowSize / 2];
-                    newVertices.push(...back);
-                    newColors.push(yellow.r, yellow.g, yellow.b, yellow.r, yellow.g, yellow.b, yellow.r, yellow.g, yellow.b, yellow.r, yellow.g, yellow.b);
-                    const right = [xOffset - windowSize / 2, y - windowSize / 2, width / 2, xOffset + windowSize / 2, y - windowSize / 2, width / 2, xOffset + windowSize / 2, y + windowSize / 2, width / 2, xOffset - windowSize / 2, y + windowSize / 2, width / 2];
-                    newVertices.push(...right);
-                    newColors.push(yellow.r, yellow.g, yellow.b, yellow.r, yellow.g, yellow.b, yellow.r, yellow.g, yellow.b, yellow.r, yellow.g, yellow.b);
-                    const left = [xOffset - windowSize / 2, y - windowSize / 2, -width / 2, xOffset - windowSize / 2, y + windowSize / 2, -width / 2, xOffset + windowSize / 2, y + windowSize / 2, -width / 2, xOffset + windowSize / 2, y - windowSize / 2, -width / 2];
-                    newVertices.push(...left);
-                    newColors.push(yellow.r, yellow.g, yellow.b, yellow.r, yellow.g, yellow.b, yellow.r, yellow.g, yellow.b, yellow.r, yellow.g, yellow.b);
-                }
-            }
-            
-            const indices = [];
-            for (let v = 0; v < segmentGeo.index.array.length; v++) {
-                indices.push(segmentGeo.index.array[v]);
-            }
-            const baseVertexCount = segmentGeo.attributes.position.count;
-            for (let k = 0; k < rows * cols * 4; k++) {
-                const start = baseVertexCount + k * 4;
-                indices.push(start, start + 1, start + 2, start, start + 2, start + 3);
-            }
-            
-            const customGeo = new THREE.BufferGeometry();
-            customGeo.setAttribute('position', new THREE.Float32BufferAttribute(newVertices, 3));
-            customGeo.setAttribute('color', new THREE.Float32BufferAttribute(newColors, 3));
-            customGeo.setIndex(indices);
-            
-            const segment = new THREE.Mesh(customGeo, new THREE.MeshBasicMaterial({ vertexColors: true }));
-            segment.position.set(0, currentY, 0);
-            segment.castShadow = true;
-            building.add(segment);
-            buildingSegments.push(segment);
-            
-            currentY += segmentHeight;
+
+    buildingData.forEach(data => {
+        let building;
+        const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+        if (data.type === 'dome') {
+            const geo = new THREE.SphereGeometry(data.radius, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2);
+            building = new THREE.Mesh(geo, mat);
+            building.position.set(data.x, data.height / 2, data.z);
+        } else {
+            const geo = new THREE.BoxGeometry(data.width, data.height, data.depth);
+            building = new THREE.Mesh(geo, mat);
+            building.position.set(data.x, data.height / 2, data.z);
         }
-        building.position.set(data.x, 0, data.z);
-        city.add(building);
+        building.castShadow = true;
+        building.receiveShadow = true;
+        mars.add(building);
+        buildingSegments.push(building);
+    });
+
+    // Rocks and boulders
+    const rockGeo = new THREE.DodecahedronGeometry(5, 0);
+    const rockMat = new THREE.MeshBasicMaterial({ color: 0x8c2f00 });
+    for (let i = 0; i < 50; i++) {
+        const rock = new THREE.Mesh(rockGeo, rockMat);
+        rock.position.set(
+            (Math.random() - 0.5) * 900,
+            2.5,
+            (Math.random() - 0.5) * 900
+        );
+        rock.scale.set(
+            Math.random() * 2 + 0.5,
+            Math.random() * 2 + 0.5,
+            Math.random() * 2 + 0.5
+        );
+        rock.castShadow = true;
+        rock.receiveShadow = true;
+        mars.add(rock);
     }
-    
-    scene.add(city);
-    return { city, buildingSegments };
+
+    // Canyons (simple trenches)
+    const canyonGeo = new THREE.BoxGeometry(100, 20, 20);
+    const canyonMat = new THREE.MeshBasicMaterial({ color: 0x8c2f00 });
+    for (let i = 0; i < 5; i++) {
+        const canyon = new THREE.Mesh(canyonGeo, canyonMat);
+        canyon.position.set(
+            (Math.random() - 0.5) * 800,
+            -10,
+            (Math.random() - 0.5) * 800
+        );
+        canyon.rotation.y = Math.random() * Math.PI;
+        mars.add(canyon);
+    }
+
+    scene.add(mars);
+    return { mars, buildingSegments };
 }
 
-const { city, buildingSegments } = createCity();
+const { mars, buildingSegments } = createMarsColony();
 
-// Global material for thrusters
-const thrusterMat = new THREE.MeshBasicMaterial({ color: 0xff4500 });
+// Global material for thrusters (blue flame)
+const thrusterMat = new THREE.MeshBasicMaterial({ color: 0x00b7eb }); // Flame blue
 
-// Player (local player)
+// Player (local astronaut)
 const player = new THREE.Group();
 player.position.set(0, 0, 0);
 player.isShooting = false;
@@ -184,8 +167,8 @@ chestPlate.position.set(0, 1.4, 0.25);
 chestPlate.castShadow = true;
 player.add(chestPlate);
 
-// Arms with joints
-const upperArmGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.4, 16);
+// Arms with joints (shortened)
+const upperArmGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.2857, 16);
 const armMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
 const leftUpperArm = new THREE.Mesh(upperArmGeo, armMat);
 leftUpperArm.position.set(-0.5, 1.3, 0);
@@ -195,47 +178,39 @@ const rightUpperArm = new THREE.Mesh(upperArmGeo, armMat);
 rightUpperArm.position.set(0.5, 1.3, 0);
 rightUpperArm.castShadow = true;
 player.add(rightUpperArm);
-const lowerArmGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.4, 16);
+const lowerArmGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.2857, 16);
 const leftLowerArm = new THREE.Mesh(lowerArmGeo, armMat);
-leftLowerArm.position.set(0, -0.4, 0);
+leftLowerArm.position.set(0, -0.2857, 0);
 leftLowerArm.castShadow = true;
 leftUpperArm.add(leftLowerArm);
 const rightLowerArm = new THREE.Mesh(lowerArmGeo, armMat);
-rightLowerArm.position.set(0, -0.4, 0);
+rightLowerArm.position.set(0, -0.2857, 0);
 rightLowerArm.castShadow = true;
 rightUpperArm.add(rightLowerArm);
 
-// Legs with boots and thrusters
-const upperLegGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.6, 16);
+// Extended legs without boots, pivot at top
+const legGeo = new THREE.CylinderGeometry(0.15, 0.15, 1.1, 16);
 const legMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-const leftUpperLeg = new THREE.Mesh(upperLegGeo, legMat);
-leftUpperLeg.position.set(-0.2, 0.6, 0);
+const leftUpperLeg = new THREE.Mesh(legGeo, legMat);
+leftUpperLeg.position.set(-0.2, 0.9, 0);
 leftUpperLeg.castShadow = true;
 player.add(leftUpperLeg);
-const rightUpperLeg = new THREE.Mesh(upperLegGeo, legMat);
-rightUpperLeg.position.set(0.2, 0.6, 0);
+const rightUpperLeg = new THREE.Mesh(legGeo, legMat);
+rightUpperLeg.position.set(0.2, 0.9, 0);
 rightUpperLeg.castShadow = true;
 player.add(rightUpperLeg);
 const leftLeg = leftUpperLeg;
 const rightLeg = rightUpperLeg;
-const bootGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.3, 16);
-const bootMat = new THREE.MeshBasicMaterial({ color: 0x404040 });
-const leftBoot = new THREE.Mesh(bootGeo, bootMat);
-leftBoot.position.set(0, -0.35, 0);
-leftBoot.castShadow = true;
-leftUpperLeg.add(leftBoot);
-const rightBoot = new THREE.Mesh(bootGeo, bootMat);
-rightBoot.position.set(0, -0.35, 0);
-rightBoot.castShadow = true;
-rightUpperLeg.add(rightBoot);
 const legThrusterGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.2, 16);
 const leftLegThruster = new THREE.Mesh(legThrusterGeo, thrusterMat);
 leftLegThruster.position.set(-0.25, 0.4, 0);
 leftLegThruster.castShadow = true;
+leftLegThruster.visible = false;
 player.add(leftLegThruster);
 const rightLegThruster = new THREE.Mesh(legThrusterGeo, thrusterMat);
 rightLegThruster.position.set(0.25, 0.4, 0);
 rightLegThruster.castShadow = true;
+rightLegThruster.visible = false;
 player.add(rightLegThruster);
 
 // Jetpack with vents
@@ -256,49 +231,20 @@ rightVent.position.set(0.35, 1.2, -0.5);
 rightVent.castShadow = true;
 player.add(rightVent);
 const flameGeo = new THREE.ConeGeometry(0.2, 0.8, 8);
-const flameMat = new THREE.MeshBasicMaterial({ color: 0xff4500 });
+const flameMat = new THREE.MeshBasicMaterial({ color: 0x00b7eb }); // Blue flame
 const flame = new THREE.Mesh(flameGeo, flameMat);
-flame.position.set(0, 0.8, -0.5);
+flame.position.set(0, 0.7, -0.5);
 flame.rotation.x = Math.PI;
 flame.visible = false;
 player.add(flame);
 
 scene.add(player);
 
-// Motorcycle
-const motorcycle = new THREE.Group();
-motorcycle.position.set(5, 0, 5);
-const bikeBodyGeo = new THREE.BoxGeometry(2, 0.5, 0.8);
-const bikeBodyMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-const bikeBody = new THREE.Mesh(bikeBodyGeo, bikeBodyMat);
-bikeBody.position.set(0, 0.25, 0);
-bikeBody.castShadow = true;
-motorcycle.add(bikeBody);
-const wheelGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.4, 16);
-const wheelMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
-const frontWheel = new THREE.Mesh(wheelGeo, wheelMat);
-frontWheel.position.set(0.8, 0.15, 0);
-frontWheel.rotation.z = Math.PI / 2;
-frontWheel.castShadow = true;
-motorcycle.add(frontWheel);
-const rearWheel = new THREE.Mesh(wheelGeo, wheelMat);
-rearWheel.position.set(-0.8, 0.15, 0);
-rearWheel.rotation.z = Math.PI / 2;
-rearWheel.castShadow = true;
-motorcycle.add(rearWheel);
-const thrusterGeo = new THREE.ConeGeometry(0.2, 0.8, 8);
-const thruster = new THREE.Mesh(thrusterGeo, thrusterMat);
-thruster.position.set(-0.8, 0.25, 0);
-thruster.rotation.x = Math.PI;
-thruster.visible = false;
-motorcycle.add(thruster);
-scene.add(motorcycle);
-
-// Enemies
+// Enemies (green aliens)
 const enemies = [];
-function createHumanoidEnemy() {
+function createAlienEnemy() {
     const enemy = new THREE.Group();
-    enemy.position.set((Math.random() - 0.5) * 180, 0, (Math.random() - 0.5) * 180);
+    enemy.position.set((Math.random() - 0.5) * 900, 0, (Math.random() - 0.5) * 900);
     enemy.shootTimer = Math.random() * 120;
     enemy.target = null;
     enemy.wanderDirection = new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize();
@@ -307,34 +253,31 @@ function createHumanoidEnemy() {
     enemy.legSpeed = 0.1;
     
     const headGeo = new THREE.SphereGeometry(0.3, 16, 16);
-    const headMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const head = new THREE.Mesh(headGeo, headMat);
+    const alienMat = new THREE.MeshBasicMaterial({ color: 0x00ff00 }); // Green alien
+    const head = new THREE.Mesh(headGeo, alienMat);
     head.position.set(0, 1.8, 0);
     head.castShadow = true;
     enemy.add(head);
     const bodyGeo = new THREE.CylinderGeometry(0.3, 0.3, 1, 16);
-    const bodyMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    const body = new THREE.Mesh(bodyGeo, alienMat);
     body.position.set(0, 1, 0);
     body.castShadow = true;
     enemy.add(body);
     const armGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.8, 16);
-    const armMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const leftArm = new THREE.Mesh(armGeo, armMat);
+    const leftArm = new THREE.Mesh(armGeo, alienMat);
     leftArm.position.set(-0.5, 1, 0);
     leftArm.castShadow = true;
     enemy.add(leftArm);
-    const rightArm = new THREE.Mesh(armGeo, armMat);
+    const rightArm = new THREE.Mesh(armGeo, alienMat);
     rightArm.position.set(0.5, 1, 0);
     rightArm.castShadow = true;
     enemy.add(rightArm);
     const legGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.8, 16);
-    const legMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-    const leftLeg = new THREE.Mesh(legGeo, legMat);
+    const leftLeg = new THREE.Mesh(legGeo, alienMat);
     leftLeg.position.set(-0.2, 0.4, 0);
     leftLeg.castShadow = true;
     enemy.add(leftLeg);
-    const rightLeg = new THREE.Mesh(legGeo, legMat);
+    const rightLeg = new THREE.Mesh(legGeo, alienMat);
     rightLeg.position.set(0.2, 0.4, 0);
     rightLeg.castShadow = true;
     enemy.add(rightLeg);
@@ -344,8 +287,8 @@ function createHumanoidEnemy() {
     scene.add(enemy);
     return enemy;
 }
-for (let i = 0; i < 10; i++) {
-    enemies.push(createHumanoidEnemy());
+for (let i = 0; i < 30; i++) { // Tripled from 10 to 30
+    enemies.push(createAlienEnemy());
 }
 
 // Camera setup
@@ -358,6 +301,7 @@ const knob = document.getElementById('knob');
 let moveX = 0, moveZ = 0, moveY = 0;
 
 function startDrag(e) {
+    if (!hasJoined) return;
     e.preventDefault();
     const rect = joystick.getBoundingClientRect();
     const getTouchPos = (event) => {
@@ -401,8 +345,9 @@ joystick.addEventListener('mousedown', startDrag);
 joystick.addEventListener('touchstart', startDrag);
 
 // Keyboard controls
-const keys = { w: false, a: false, s: false, d: false, space: false, e: false, q: false };
+const keys = { w: false, a: false, s: false, d: false, space: false, e: false, q: false, b: false };
 document.addEventListener('keydown', (e) => {
+    if (!hasJoined) return;
     if (e.key === 'w') keys.w = true;
     if (e.key === 'a') keys.a = true;
     if (e.key === 's') keys.s = true;
@@ -410,21 +355,18 @@ document.addEventListener('keydown', (e) => {
     if (e.key === ' ') keys.space = true;
     if (e.key === 'e') keys.e = true;
     if (e.key === 'q') keys.q = true;
+    if (e.key === 'b') keys.b = true;
 });
 document.addEventListener('keyup', (e) => {
+    if (!hasJoined) return;
     if (e.key === 'w') keys.w = false;
     if (e.key === 'a') keys.a = false;
     if (e.key === 's') keys.s = false;
     if (e.key === 'd') keys.d = false;
     if (e.key === ' ') keys.space = false;
-    if (e.key === 'e') { 
-        keys.e = false;
-        moveY = 0;
-    }
-    if (e.key === 'q') { 
-        keys.q = false;
-        moveY = 0;
-    }
+    if (e.key === 'e') { keys.e = false; moveY = 0; }
+    if (e.key === 'q') { keys.q = false; moveY = 0; }
+    if (e.key === 'b') keys.b = false;
 });
 
 // Bullet pool
@@ -441,6 +383,7 @@ for (let i = 0; i < 20; i++) {
 const shootBtn = document.getElementById('shoot');
 
 function triggerShoot(e) {
+    if (!hasJoined) return;
     e.preventDefault();
     shoot();
 }
@@ -452,13 +395,15 @@ shootBtn.addEventListener('touchstart', triggerShoot);
 const flyBtn = document.getElementById('flyBtn');
 
 function startFly(e) {
+    if (!hasJoined) return;
     e.preventDefault();
-    keys.e = true; // Match E key (fly up)
+    keys.e = true;
 }
 
 function stopFly(e) {
+    if (!hasJoined) return;
     e.preventDefault();
-    keys.e = false; // Drop with gravity
+    keys.e = false;
 }
 
 flyBtn.addEventListener('mousedown', startFly);
@@ -486,10 +431,9 @@ function shoot() {
 // Full-screen toggle
 const canvas = renderer.domElement;
 canvas.addEventListener('dblclick', () => {
+    if (!hasJoined) return;
     if (!document.fullscreenElement) {
-        canvas.requestFullscreen().catch(err => {
-            console.log(`Fullscreen failed: ${err}`);
-        });
+        canvas.requestFullscreen().catch(err => console.log(`Fullscreen failed: ${err}`));
     } else {
         document.exitFullscreen();
     }
@@ -502,7 +446,7 @@ const respawnCounter = document.getElementById('respawn');
 // Respawn functions
 function respawnEnemy(enemy) {
     scene.remove(enemy);
-    const newEnemy = createHumanoidEnemy();
+    const newEnemy = createAlienEnemy();
     enemies[enemies.indexOf(enemy)] = newEnemy;
 }
 function respawnPlayer() {
@@ -516,7 +460,7 @@ function respawnPlayer() {
 // Animation variables
 let legAngle = 0;
 let legSpeed = 0.1;
-let isOnBike = false;
+let isOnBike = false; // Unused now, but kept for logic consistency
 let bikeSpeed = 0;
 const maxBikeSpeed = 0.5;
 const bikeAcceleration = 0.02;
@@ -541,11 +485,9 @@ socket.on('newPlayer', (data) => {
 
 socket.on('playerMoved', (data) => {
     console.log('Player moved:', data);
-    console.log('Received legAngle:', data.legAngle);
     if (otherPlayers[data.id]) {
         otherPlayers[data.id].position.set(data.x, data.y, data.z);
         otherPlayers[data.id].rotation.y = data.rotationY;
-        // Sync leg and arm movements
         if (data.legAngle !== undefined) {
             otherPlayers[data.id].leftUpperLeg.rotation.x = data.legAngle;
             otherPlayers[data.id].rightUpperLeg.rotation.x = -data.legAngle;
@@ -557,9 +499,7 @@ socket.on('playerMoved', (data) => {
             otherPlayers[data.id].leftUpperArm.rotation.x = 0;
             otherPlayers[data.id].rightUpperArm.rotation.x = 0;
         }
-    } else {
-        console.log('Player not found, adding:', data.id);
-        addOtherPlayer(data.id, data);
+        updatePlayerNamePosition(data.id, otherPlayers[data.id]);
     }
 });
 
@@ -567,14 +507,23 @@ socket.on('playerDisconnected', (id) => {
     console.log('Player disconnected:', id);
     if (otherPlayers[id]) {
         scene.remove(otherPlayers[id]);
+        if (playerNames[id]) {
+            nameLabels.removeChild(playerNames[id]);
+            delete playerNames[id];
+        }
         delete otherPlayers[id];
+    }
+});
+
+socket.on('usernameSet', (data) => {
+    if (otherPlayers[data.id]) {
+        updatePlayerName(data.id, data.username);
     }
 });
 
 function addOtherPlayer(id, data) {
     const otherPlayer = new THREE.Group();
 
-    // Head with helmet and visor
     const otherHelmetGeo = new THREE.SphereGeometry(0.35, 16, 16);
     const otherHelmetMat = new THREE.MeshBasicMaterial({ color: 0x404040 });
     const otherHelmet = new THREE.Mesh(otherHelmetGeo, otherHelmetMat);
@@ -588,7 +537,6 @@ function addOtherPlayer(id, data) {
     otherVisor.castShadow = true;
     otherPlayer.add(otherVisor);
 
-    // Torso with armor plates
     const otherTorsoGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.6, 16);
     const otherTorsoMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const otherTorso = new THREE.Mesh(otherTorsoGeo, otherTorsoMat);
@@ -602,8 +550,7 @@ function addOtherPlayer(id, data) {
     otherChestPlate.castShadow = true;
     otherPlayer.add(otherChestPlate);
 
-    // Arms with joints
-    const otherUpperArmGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.4, 16);
+    const otherUpperArmGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.2857, 16);
     const otherArmMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const otherLeftUpperArm = new THREE.Mesh(otherUpperArmGeo, otherArmMat);
     otherLeftUpperArm.position.set(-0.5, 1.3, 0);
@@ -613,48 +560,38 @@ function addOtherPlayer(id, data) {
     otherRightUpperArm.position.set(0.5, 1.3, 0);
     otherRightUpperArm.castShadow = true;
     otherPlayer.add(otherRightUpperArm);
-    const otherLowerArmGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.4, 16);
+    const otherLowerArmGeo = new THREE.CylinderGeometry(0.1, 0.1, 0.2857, 16);
     const otherLeftLowerArm = new THREE.Mesh(otherLowerArmGeo, otherArmMat);
-    otherLeftLowerArm.position.set(0, -0.4, 0);
+    otherLeftLowerArm.position.set(0, -0.2857, 0);
     otherLeftLowerArm.castShadow = true;
     otherLeftUpperArm.add(otherLeftLowerArm);
     const otherRightLowerArm = new THREE.Mesh(otherLowerArmGeo, otherArmMat);
-    otherRightLowerArm.position.set(0, -0.4, 0);
+    otherRightLowerArm.position.set(0, -0.2857, 0);
     otherRightLowerArm.castShadow = true;
     otherRightUpperArm.add(otherRightLowerArm);
 
-    // Legs with boots and thrusters
-    const otherUpperLegGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.6, 16);
+    const otherUpperLegGeo = new THREE.CylinderGeometry(0.15, 0.15, 1.1, 16);
     const otherLegMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
     const otherLeftUpperLeg = new THREE.Mesh(otherUpperLegGeo, otherLegMat);
-    otherLeftUpperLeg.position.set(-0.2, 0.6, 0);
+    otherLeftUpperLeg.position.set(-0.2, 0.9, 0);
     otherLeftUpperLeg.castShadow = true;
     otherPlayer.add(otherLeftUpperLeg);
     const otherRightUpperLeg = new THREE.Mesh(otherUpperLegGeo, otherLegMat);
-    otherRightUpperLeg.position.set(0.2, 0.6, 0);
+    otherRightUpperLeg.position.set(0.2, 0.9, 0);
     otherRightUpperLeg.castShadow = true;
     otherPlayer.add(otherRightUpperLeg);
-    const otherBootGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.3, 16);
-    const otherBootMat = new THREE.MeshBasicMaterial({ color: 0x404040 });
-    const otherLeftBoot = new THREE.Mesh(otherBootGeo, otherBootMat);
-    otherLeftBoot.position.set(0, -0.35, 0);
-    otherLeftBoot.castShadow = true;
-    otherLeftUpperLeg.add(otherLeftBoot);
-    const otherRightBoot = new THREE.Mesh(otherBootGeo, otherBootMat);
-    otherRightBoot.position.set(0, -0.35, 0);
-    otherRightBoot.castShadow = true;
-    otherRightUpperLeg.add(otherRightBoot);
     const otherLegThrusterGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.2, 16);
     const otherLeftLegThruster = new THREE.Mesh(otherLegThrusterGeo, thrusterMat);
     otherLeftLegThruster.position.set(-0.25, 0.4, 0);
     otherLeftLegThruster.castShadow = true;
+    otherLeftLegThruster.visible = false;
     otherPlayer.add(otherLeftLegThruster);
     const otherRightLegThruster = new THREE.Mesh(otherLegThrusterGeo, thrusterMat);
     otherRightLegThruster.position.set(0.25, 0.4, 0);
     otherRightLegThruster.castShadow = true;
+    otherRightLegThruster.visible = false;
     otherPlayer.add(otherRightLegThruster);
 
-    // Jetpack with vents
     const otherJetpackGeo = new THREE.BoxGeometry(0.6, 0.6, 0.4);
     const otherJetpackMat = new THREE.MeshBasicMaterial({ color: 0x808080 });
     const otherJetpack = new THREE.Mesh(otherJetpackGeo, otherJetpackMat);
@@ -672,14 +609,13 @@ function addOtherPlayer(id, data) {
     otherRightVent.castShadow = true;
     otherPlayer.add(otherRightVent);
     const otherFlameGeo = new THREE.ConeGeometry(0.2, 0.8, 8);
-    const otherFlameMat = new THREE.MeshBasicMaterial({ color: 0xff4500 });
+    const otherFlameMat = new THREE.MeshBasicMaterial({ color: 0x00b7eb });
     const otherFlame = new THREE.Mesh(otherFlameGeo, otherFlameMat);
-    otherFlame.position.set(0, 0.8, -0.5);
+    otherFlame.position.set(0, 0.7, -0.5);
     otherFlame.rotation.x = Math.PI;
     otherFlame.visible = false;
     otherPlayer.add(otherFlame);
 
-    // Store references for leg and arm syncing
     otherPlayer.leftUpperLeg = otherLeftUpperLeg;
     otherPlayer.rightUpperLeg = otherRightUpperLeg;
     otherPlayer.leftUpperArm = otherLeftUpperArm;
@@ -689,72 +625,107 @@ function addOtherPlayer(id, data) {
     otherPlayer.rotation.y = data.rotationY;
     scene.add(otherPlayer);
     otherPlayers[id] = otherPlayer;
+
+    updatePlayerName(id, data.username || 'Player' + id.slice(0, 4));
     console.log('Added other player:', id, 'at', data.x, data.y, data.z);
 }
+
+// Username handling with CSS
+function updatePlayerName(id, username) {
+    let nameDiv = playerNames[id];
+    if (!nameDiv) {
+        nameDiv = document.createElement('div');
+        nameDiv.className = 'player-name';
+        nameDiv.id = `name-${id}`;
+        nameLabels.appendChild(nameDiv);
+        playerNames[id] = nameDiv;
+    }
+    nameDiv.textContent = username;
+    updatePlayerNamePosition(id, id === socket.id ? player : otherPlayers[id]);
+}
+
+function updatePlayerNamePosition(id, playerObj) {
+    if (!playerNames[id] || !playerObj) return;
+
+    const vector = new THREE.Vector3();
+    playerObj.getWorldPosition(vector);
+    const distance = camera.position.distanceTo(vector);
+
+    const maxDistance = 50;
+    const maxFontSize = 16;
+    const fontSize = Math.max(0, maxFontSize * (1 - distance / maxDistance));
+
+    const nameDiv = playerNames[id];
+    
+    vector.y += 2.5;
+    vector.project(camera);
+
+    if (vector.z > 1) {
+        nameDiv.style.display = 'none';
+        return;
+    } else {
+        nameDiv.style.display = 'block';
+    }
+
+    nameDiv.style.fontSize = `${fontSize}px`;
+
+    const x = (vector.x * 0.5 + 0.5) * window.innerWidth;
+    const y = (-vector.y * 0.5 + 0.5) * window.innerHeight;
+    
+    nameDiv.style.left = `${x}px`;
+    nameDiv.style.top = `${y}px`;
+    nameDiv.style.transform = 'translate(-50%, -100%)';
+}
+
+window.addEventListener('usernameSubmitted', (e) => {
+    hasJoined = true;
+    localUsername = e.detail;
+    updatePlayerName(socket.id, localUsername);
+    socket.emit('setUsername', localUsername);
+    leftUpperArm.visible = true;
+    rightUpperArm.visible = true;
+    leftLowerArm.visible = true;
+    rightLowerArm.visible = true;
+});
 
 // Animate loop
 function animate() {
     requestAnimationFrame(animate);
 
-    let keyboardMoveX = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
-    let keyboardMoveZ = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
-    let keyboardMoveY = (keys.e ? 4 : 0) - (keys.q ? 1 : 0);
-    moveX = Math.max(-1, Math.min(1, moveX + keyboardMoveX));
-    moveZ = Math.max(-1, Math.min(1, moveZ + keyboardMoveZ));
-    moveY = Math.max(-1, Math.min(4, moveY + keyboardMoveY));
+    if (hasJoined) {
+        let keyboardMoveX = (keys.d ? 1 : 0) - (keys.a ? 1 : 0);
+        let keyboardMoveZ = (keys.w ? 1 : 0) - (keys.s ? 1 : 0);
+        let keyboardMoveY = (keys.e ? 4 : 0) - (keys.q ? 1 : 0);
+        moveX = Math.max(-1, Math.min(1, moveX + keyboardMoveX));
+        moveZ = Math.max(-1, Math.min(1, moveZ + keyboardMoveZ));
+        moveY = Math.max(-1, Math.min(4, moveY + keyboardMoveY));
 
-    if (keys.space && !player.isShooting) shoot();
+        if (keys.space && !player.isShooting) shoot();
 
-    if (!isOnBike && !keys.e && !keys.q) {
-        moveY = -4;
-    }
+        if (!keys.e && !keys.q) moveY = -4; // No bike, so no isOnBike check
 
-    const flame = player.children.find(child => child.geometry.type === 'ConeGeometry');
-    if (flame) {
-        flame.visible = !isOnBike && moveY > 0;
-        if (flame.visible) {
+        const flameVisible = moveY > 0; // Bike removed, so no !isOnBike
+        flame.visible = flameVisible;
+        leftLegThruster.visible = flameVisible;
+        rightLegThruster.visible = flameVisible;
+        if (flameVisible) {
             flame.scale.y = 0.8 + Math.sin(Date.now() * 0.01) * 0.2;
+            leftLegThruster.scale.y = 0.8 + Math.sin(Date.now() * 0.01) * 0.2;
+            rightLegThruster.scale.y = 0.8 + Math.sin(Date.now() * 0.01) * 0.2;
         }
-    }
 
-    const thruster = motorcycle.children.find(child => child.geometry.type === 'ConeGeometry');
-    if (thruster) {
-        thruster.visible = isOnBike && moveY > 0;
-        if (thruster.visible) {
-            thruster.scale.y = 0.8 + Math.sin(Date.now() * 0.01) * 0.2;
-        }
-    }
+        if (!player.isShooting && scene.children.includes(player)) {
+            const baseSpeed = 0.05;
+            const flySpeed = 0.15;
+            const horizontalSpeed = (moveY > 0) ? flySpeed : baseSpeed;
 
-    if (!player.isShooting && scene.children.includes(player)) {
-        const baseSpeed = 0.05;
-        const flySpeed = 0.15;
-        const horizontalSpeed = (!isOnBike && moveY > 0) ? flySpeed : baseSpeed;
+            const newX = player.position.x - moveX * horizontalSpeed;
+            const newZ = player.position.z + moveZ * horizontalSpeed;
+            let newY = player.position.y + moveY * 0.05;
+            const distance = Math.sqrt(newX * newX + newZ * newZ);
 
-        const newX = isOnBike ? motorcycle.position.x : player.position.x - moveX * horizontalSpeed;
-        const newZ = isOnBike ? motorcycle.position.z : player.position.z + moveZ * horizontalSpeed;
-        let newY = (isOnBike ? motorcycle.position.y : player.position.y) + moveY * 0.05;
-        const distance = Math.sqrt(newX * newX + newZ * newZ);
-
-        console.log('y:', player.position.y);
-        if (isOnBike) {
-            if (moveZ > 0) bikeSpeed = Math.min(bikeSpeed + bikeAcceleration, maxBikeSpeed);
-            else if (moveZ < 0) bikeSpeed = Math.max(bikeSpeed - bikeAcceleration, -maxBikeSpeed);
-            else bikeSpeed *= (1 - bikeDeceleration);
-
-            const direction = new THREE.Vector3(0, 0, 1).applyAxisAngle(new THREE.Vector3(0, 1, 0), motorcycle.rotation.y);
-            motorcycle.position.add(direction.multiplyScalar(bikeSpeed));
-
-            if (moveX) {
-                motorcycle.rotation.y -= moveX * 0.05;
-            }
-            motorcycle.position.y = Math.max(0, Math.min(200, newY));
-        } else {
-            let collisionX = false;
-            let collisionZ = false;
-            let collisionY = false;
-            let adjustedX = newX;
-            let adjustedZ = newZ;
-            let adjustedY = newY;
+            let collisionX = false, collisionZ = false, collisionY = false;
+            let adjustedX = newX, adjustedZ = newZ, adjustedY = newY;
 
             buildingSegments.forEach(segment => {
                 const box = new THREE.Box3().setFromObject(segment);
@@ -793,78 +764,60 @@ function animate() {
                 }
             });
 
-            if (distance <= 100) {
+            if (distance <= 500) {
                 if (!collisionX) player.position.x = newX;
                 else player.position.x = adjustedX;
                 if (!collisionZ) player.position.z = newZ;
                 else player.position.z = adjustedZ;
             } else {
                 const angle = Math.atan2(newZ, newX);
-                player.position.x = Math.cos(angle) * 100;
-                player.position.z = Math.sin(angle) * 100;
+                player.position.x = Math.cos(angle) * 500;
+                player.position.z = Math.sin(angle) * 500;
             }
-            if (!collisionY) {
-                player.position.y = Math.max(0, Math.min(200, newY));
-            } else {
-                player.position.y = adjustedY;
-            }
+            if (!collisionY) player.position.y = Math.max(0, Math.min(200, newY));
+            else player.position.y = adjustedY;
 
-            if (!isOnBike && (moveX || moveZ)) {
-                player.rotation.y = Math.atan2(-moveX, moveZ);
-            }
+            if (moveX || moveZ) player.rotation.y = Math.atan2(-moveX, moveZ);
 
-            if (!isOnBike && (moveX || moveZ) && player.position.y < 0.1) {
-                legAngle += legSpeed;
+            if ((moveX || moveZ) && player.position.y < 0.1) {
+                const moveDirection = Math.atan2(-moveX, moveZ);
+                legAngle += legSpeed * Math.sign(moveZ || moveX);
                 if (legAngle > 0.5 || legAngle < -0.5) legSpeed = -legSpeed;
-                leftLeg.rotation.x = legAngle;
-                rightLeg.rotation.x = -legAngle;
+                leftUpperLeg.rotation.x = legAngle;
+                rightUpperLeg.rotation.x = -legAngle;
                 leftUpperArm.rotation.x = -legAngle;
                 rightUpperArm.rotation.x = legAngle;
             } else {
-                leftLeg.rotation.x = 0;
-                rightLeg.rotation.x = 0;
+                leftUpperLeg.rotation.x = 0;
+                rightUpperLeg.rotation.x = 0;
                 leftUpperArm.rotation.x = 0;
                 rightUpperArm.rotation.x = 0;
                 legAngle = 0;
             }
 
-            console.log('Raw legAngle:', legAngle); // New
-            console.log('Sending legAngle:', (!isOnBike && (moveX || moveZ) && player.position.y < 0.1) ? legAngle : undefined);
             socket.emit('updatePosition', {
                 x: player.position.x,
                 y: player.position.y,
                 z: player.position.z,
                 rotationY: player.rotation.y,
-                legAngle: (!isOnBike && (moveX || moveZ) && player.position.y < 0.1) ? legAngle : undefined
+                legAngle: ((moveX || moveZ) && player.position.y < 0.1) ? legAngle : undefined
             });
         }
-    }
 
-    document.addEventListener('keydown', (e) => {
-        if (e.key === 'b' && !isOnBike && player.position.distanceTo(motorcycle.position) < 2) {
-            isOnBike = true;
-            scene.remove(player);
-        } else if (e.key === 'b' && isOnBike) {
-            isOnBike = false;
-            player.position.copy(motorcycle.position);
-            player.position.y = 0;
-            scene.add(player);
-        }
-    }, { once: true });
-
-    if (scene.children.includes(player)) {
-        enemies.forEach(enemy => {
-            if (scene.children.includes(enemy)) {
-                const distance = player.position.distanceTo(enemy.position);
-                if (distance < 1) {
-                    const pushDir = player.position.clone().sub(enemy.position).normalize().multiplyScalar(0.05);
-                    player.position.add(pushDir);
-                    enemy.position.sub(pushDir);
-                    if (player.position.length() > 100) player.position.clampLength(0, 100);
-                    if (enemy.position.length() > 100) enemy.position.clampLength(0, 100);
+        if (scene.children.includes(player)) {
+            enemies.forEach(enemy => {
+                if (scene.children.includes(enemy)) {
+                    const distance = player.position.distanceTo(enemy.position);
+                    if (distance < 1) {
+                        const pushDir = player.position.clone().sub(enemy.position).normalize().multiplyScalar(0.05);
+                        player.position.add(pushDir);
+                        enemy.position.sub(pushDir);
+                        if (player.position.length() > 500) player.position.clampLength(0, 500);
+                        if (enemy.position.length() > 500) enemy.position.clampLength(0, 500);
+                    }
                 }
-            }
-        });
+            });
+        }
     }
 
     enemies.forEach(enemy => {
@@ -905,7 +858,7 @@ function animate() {
                 }
             } else {
                 enemy.position.add(enemy.wanderDirection.clone().multiplyScalar(0.05));
-                if (enemy.position.length() > 100) enemy.position.clampLength(0, 100);
+                if (enemy.position.length() > 500) enemy.position.clampLength(0, 500);
                 enemy.rotation.y = Math.atan2(enemy.wanderDirection.x, enemy.wanderDirection.z);
                 if (Math.random() < 0.01) {
                     enemy.wanderDirection = new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).normalize();
@@ -951,7 +904,7 @@ function animate() {
                 }
             });
             if (scene.children.includes(player) && child.position.distanceTo(player.position) < 0.5) {
-                if (typeof player.health === 'number') { // Prevent crash if health is undefined
+                if (typeof player.health === 'number') {
                     player.health--;
                     child.active = false;
                     if (player.health <= 0) {
@@ -974,12 +927,18 @@ function animate() {
 
     if (scene.children.includes(player)) {
         camera.position.set(
-            (isOnBike ? motorcycle.position.x : player.position.x),
-            (isOnBike ? motorcycle.position.y : player.position.y) + 5,
-            (isOnBike ? motorcycle.position.z : player.position.z) - 10
+            player.position.x,
+            player.position.y + 5,
+            player.position.z - 10
         );
+        if (hasJoined) updatePlayerNamePosition(socket.id, player);
     }
+
+    Object.keys(otherPlayers).forEach(id => {
+        updatePlayerNamePosition(id, otherPlayers[id]);
+    });
 
     renderer.render(scene, camera);
 }
+
 animate();

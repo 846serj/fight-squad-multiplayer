@@ -11,13 +11,82 @@
         #knob { width: 40px; height: 40px; background: white; border-radius: 50%; position: absolute; top: 25px; left: 25px; }
         #shoot { width: 60px; height: 60px; bottom: 20px; right: 20px; }
         #flyBtn { width: 60px; height: 60px; bottom: 100px; right: 20px; }
+        #usernamePopup { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0, 0, 0, 0.8); padding: 20px; border-radius: 10px; color: white; text-align: center; z-index: 1000; }
+        #usernamePopup input { padding: 5px; margin: 10px; }
+        #usernamePopup button { padding: 5px 10px; }
+        .player-name { position: absolute; color: white; font-family: Arial, sans-serif; font-size: 16px; text-align: center; pointer-events: none; z-index: 10; }
+        #profileIcon { position: absolute; top: 10px; left: 10px; width: 40px; height: 40px; background: gray; border-radius: 50%; cursor: pointer; z-index: 20; }
+        #profileSidebar { 
+            display: none; /* Hidden by default */
+            position: fixed; 
+            top: 0; 
+            left: -250px; 
+            width: 250px; 
+            height: 100%; 
+            background: rgba(0, 0, 0, 0.9); 
+            color: white; 
+            padding: 20px; 
+            transition: left 0.3s; 
+            z-index: 30; 
+        }
+        #profileSidebar.open { 
+            display: block; 
+            left: 0; 
+        }
+        #profileSidebar h2 { margin: 0 0 10px; }
+        #profileSidebar input { padding: 5px; width: 80%; margin: 10px 0; }
+        #profileSidebar button { padding: 5px 10px; }
+        #closeSidebar { position: absolute; top: 10px; right: 10px; font-size: 20px; cursor: pointer; }
     </style>
 </head>
 <body>
     <div id="joystick"><div id="knob"></div></div>
     <button id="shoot">Shoot</button>
     <button id="flyBtn">Fly</button>
+    <div id="usernamePopup">
+        <h2>Enter Username</h2>
+        <input type="text" id="usernameInput" placeholder="Your name" maxlength="16">
+        <br>
+        <button onclick="submitUsername()">Join Game</button>
+    </div>
+    <div id="nameLabels"></div>
+    <div id="profileIcon" onclick="toggleSidebar()"></div>
+    <div id="profileSidebar">
+        <span id="closeSidebar" onclick="toggleSidebar()">X</span>
+        <h2 id="profileName"></h2>
+        <input type="text" id="newUsernameInput" placeholder="New name" maxlength="16">
+        <button onclick="changeUsername()">Change Name</button>
+    </div>
     <script src="/socket.io/socket.io.js"></script>
     <script type="module" src="game.js"></script>
+    <script>
+        function submitUsername() {
+            const username = document.getElementById('usernameInput').value.trim() || 'Player' + Math.floor(Math.random() * 1000);
+            document.getElementById('usernamePopup').style.display = 'none';
+            window.dispatchEvent(new CustomEvent('usernameSubmitted', { detail: username }));
+        }
+
+        function toggleSidebar() {
+            const sidebar = document.getElementById('profileSidebar');
+            sidebar.classList.toggle('open');
+        }
+
+        function changeUsername() {
+            const newName = document.getElementById('newUsernameInput').value.trim();
+            if (newName) {
+                window.dispatchEvent(new CustomEvent('usernameChanged', { detail: newName }));
+                toggleSidebar();
+            }
+        }
+
+        // Close sidebar on tap outside (mobile)
+        document.addEventListener('click', (e) => {
+            const sidebar = document.getElementById('profileSidebar');
+            const icon = document.getElementById('profileIcon');
+            if (sidebar.classList.contains('open') && !sidebar.contains(e.target) && !icon.contains(e.target)) {
+                sidebar.classList.remove('open');
+            }
+        });
+    </script>
 </body>
 </html>
